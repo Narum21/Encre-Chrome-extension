@@ -117,8 +117,6 @@
   let lastPenSeen = 0;
   let trayPos = null;
   let dpr = 1;
-  let vw = 0;
-  let vh = 0;
 
   // ---------------------------------------------------------------------------
   // Interface (Shadow DOM pour ne rien hériter de la page)
@@ -163,6 +161,9 @@
   .live { pointer-events: none; touch-action: none; cursor: none; }
   .live.capture { pointer-events: auto; }
 
+  /* Calque de l'interface : suit la zone visible et annule le zoom (réglé en JS). */
+  .hud { position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; transform-origin: 0 0; pointer-events: none; }
+
   .tray {
     --tray: #2B2F36;
     --raised: #363B44;
@@ -171,8 +172,8 @@
     --idle: #C3C8D0;
     --ink: #2350D8;
     --on-ink: #FFFFFF;
-    position: fixed; left: 16px; top: 120px;
-    width: 56px; max-height: calc(100vh - 16px);
+    position: absolute; left: 16px; top: 120px;
+    width: 56px; max-height: calc(100% - 16px);
     overflow-y: auto; scrollbar-width: none;
     padding: 6px;
     display: flex; flex-direction: column; align-items: center; gap: 4px;
@@ -255,7 +256,7 @@
   .sizes.outline .size i { background: none; border: 1.5px solid currentColor; }
 
   .toast {
-    position: fixed; left: 50%; bottom: 24px;
+    position: absolute; left: 50%; bottom: 24px;
     transform: translate(-50%, 8px); opacity: 0;
     transition: opacity 0.16s ease, transform 0.16s ease;
     display: flex; align-items: center; gap: 10px;
@@ -277,6 +278,7 @@
 </style>
 <canvas class="base"></canvas>
 <canvas class="live"></canvas>
+<div class="hud">
 <div class="tray" role="toolbar" aria-label="Encre" aria-orientation="vertical">
   <button class="grip" title="Déplacer la barre" aria-label="Déplacer la barre">
     <svg viewBox="0 0 18 6" aria-hidden="true"><circle cx="3" cy="1.5" r="1.3"/><circle cx="9" cy="1.5" r="1.3"/><circle cx="15" cy="1.5" r="1.3"/><circle cx="3" cy="4.5" r="1.3"/><circle cx="9" cy="4.5" r="1.3"/><circle cx="15" cy="4.5" r="1.3"/></svg>
@@ -302,8 +304,10 @@
   <button class="btn" data-act="close" title="Masquer l'encre (Échap). Tes traits restent enregistrés." aria-label="Masquer">${icon('close')}</button>
 </div>
 <div class="toast" role="status" aria-live="polite"><span></span><button type="button" hidden>Annuler</button></div>
+</div>
 `;
 
+  const hud = root.querySelector('.hud');
   const base = root.querySelector('.base');
   const live = root.querySelector('.live');
   const bctx = base.getContext('2d');
@@ -446,33 +450,83 @@
   function frame() {
     raf = 0;
     if (!active) return;
+    if ((window.devicePixelRatio || 1) !== dpr) layoutDirty = true; // filet de sécurité
+    if (layoutDirty) {
+      resize();
+      if (trayPos) placeTray(trayPos.x, trayPos.y);
+    }
     if (baseDirty) renderBase();
     renderLive();
   }
 
-  function resize() {
-    dpr = window.devicePixelRatio || 1;
-    vw = host.clientWidth || document.documentElement.clientWidth || window.innerWidth;
-    vh = host.clientHeight || window.innerHeight;
-    for (const c of [base, live]) {
-      c.width = Math.max(1, Math.round(vw * dpr));
-      c.height = Math.max(1, Math.round(vh * dpr));
-      c.style.width = vw + 'px';
-      c.style.height = vh + 'px';
+  // Zone visible de l'écran. Avec un zoom à deux doigts ou au pavé tactile,
+  // Chrome agrandit la page sans changer devicePixelRatio : la zone visible
+  // (visualViewport) rétrécit et son facteur « scale » grandit. Les canevas sont
+  // calés sur cette zone, avec une définition de dpr × scale, pour que l'encre
+  // soit dessinée pixel pour pixel au lieu d'être agrandie comme une image.
+  const vvp = window.visualViewport || null;
+  let view = { left: 0, top: 0, w: 1, h: 1, scale: 1, kx: 1, ky: 1 };
+  let screenW = 1; // taille de l'écran en px CSS non zoomés (repère de la barre)
+  let screenH = 1;
+  let layoutDirty = false;
+
+  function readView() {
+    if (vvp && vvp.width > 0 && vvp.height > 0) {
+      return { left: vvp.offsetLeft, top: vvp.offsetTop, w: vvp.width, h: vvp.height, scale: vvp.scale || 1 };
     }
+    const w = host.clientWidth || document.documentElement.clientWidth || window.innerWidth;
+    const h = host.clientHeight || window.innerHeight;
+    return { left: 0, top: 0, w, h, scale: 1 };
+  }
+
+  function resize() {
+    layoutDirty = false;
+    dpr = window.devicePixelRatio || 1;
+    const v = readView();
+    const pxW = Math.max(1, Math.round(v.w * v.scale * dpr));
+    const pxH = Math.max(1, Math.round(v.h * v.scale * dpr));
+    for (const c of [base, live]) {
+      // Réaffecter width/height vide le canevas : seulement si la définition change.
+      if (c.width !== pxW) c.width = pxW;
+      if (c.height !== pxH) c.height = pxH;
+      c.style.left = v.left + 'px';
+      c.style.top = v.top + 'px';
+      c.style.width = v.w + 'px';
+      c.style.height = v.h + 'px';
+    }
+    view = { ...v, kx: pxW / v.w, ky: pxH / v.h };
+    // La barre et les messages gardent leur taille et leur place à l'écran.
+    screenW = v.w * v.scale;
+    screenH = v.h * v.scale;
+    hud.style.left = v.left + 'px';
+    hud.style.top = v.top + 'px';
+    hud.style.width = screenW + 'px';
+    hud.style.height = screenH + 'px';
+    hud.style.transform = `scale(${1 / v.scale})`;
     baseDirty = true;
+  }
+
+  // Passe des coordonnées de la fenêtre (clientX/Y) à celles de la barre.
+  function toScreen(x, y) {
+    return { x: (x - view.left) * view.scale, y: (y - view.top) * view.scale };
+  }
+
+  function relayout() {
+    layoutDirty = true;
+    schedule(true);
   }
 
   function renderBase() {
     baseDirty = false;
     bctx.setTransform(1, 0, 0, 1, 0, 0);
     bctx.clearRect(0, 0, base.width, base.height);
-    const sx = window.scrollX, sy = window.scrollY;
-    bctx.setTransform(dpr, 0, 0, dpr, -sx * dpr, -sy * dpr);
-    const x1 = sx + vw, y1 = sy + vh;
+    const ox = window.scrollX + view.left;
+    const oy = window.scrollY + view.top;
+    bctx.setTransform(view.kx, 0, 0, view.ky, -ox * view.kx, -oy * view.ky);
+    const x1 = ox + view.w, y1 = oy + view.h;
     for (const s of sorted()) {
       const b = bbox(s);
-      if (b.x1 < sx || b.x0 > x1 || b.y1 < sy || b.y0 > y1) continue;
+      if (b.x1 < ox || b.x0 > x1 || b.y1 < oy || b.y0 > y1) continue;
       drawStroke(bctx, s);
     }
   }
@@ -480,29 +534,33 @@
   function renderLive() {
     lctx.setTransform(1, 0, 0, 1, 0, 0);
     lctx.clearRect(0, 0, live.width, live.height);
+    const { kx, ky } = view;
     if (session && session.kind === 'draw') {
-      lctx.setTransform(dpr, 0, 0, dpr, -window.scrollX * dpr, -window.scrollY * dpr);
+      const ox = window.scrollX + view.left;
+      const oy = window.scrollY + view.top;
+      lctx.setTransform(kx, 0, 0, ky, -ox * kx, -oy * ky);
       drawStroke(lctx, session.stroke);
     }
     if (!hover || settings.tool === 'nav') return;
-    lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    lctx.setTransform(kx, 0, 0, ky, -view.left * kx, -view.top * ky);
+    const hair = 1 / view.scale; // contours fins à l'écran, quel que soit le zoom
     lctx.beginPath();
     if (hover.erase) {
       const r = ERASER_SIZES[settings.eraserSize];
       lctx.arc(hover.x, hover.y, r, 0, Math.PI * 2);
       lctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
       lctx.fill();
-      lctx.lineWidth = 2.5;
+      lctx.lineWidth = 2.5 * hair;
       lctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
       lctx.stroke();
-      lctx.lineWidth = 1.2;
+      lctx.lineWidth = 1.2 * hair;
       lctx.strokeStyle = 'rgba(30, 33, 39, 0.9)';
       lctx.stroke();
     } else {
       const isHl = settings.tool === 'hl';
-      const r = Math.max(1.5, isHl ? HL_SIZES[settings.hlSize] / 2 : PEN_SIZES[settings.penSize] / 2);
+      const r = Math.max(1.5 * hair, isHl ? HL_SIZES[settings.hlSize] / 2 : PEN_SIZES[settings.penSize] / 2);
       lctx.arc(hover.x, hover.y, r, 0, Math.PI * 2);
-      lctx.lineWidth = 2;
+      lctx.lineWidth = 2 * hair;
       lctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
       lctx.stroke();
       lctx.globalAlpha = isHl ? 0.6 : 1;
@@ -1100,10 +1158,10 @@
 
   // Déplacer la barre par sa poignée.
   let drag = null;
+  // x, y : position dans le repère de l'écran (celui de la barre, non zoomé).
   function placeTray(x, y) {
-    const r = tray.getBoundingClientRect();
-    const maxX = Math.max(8, vw - r.width - 8);
-    const maxY = Math.max(8, vh - r.height - 8);
+    const maxX = Math.max(8, screenW - tray.offsetWidth - 8);
+    const maxY = Math.max(8, screenH - tray.offsetHeight - 8);
     x = Math.min(Math.max(8, x), maxX);
     y = Math.min(Math.max(8, y), maxY);
     trayPos = { x: Math.round(x), y: Math.round(y) };
@@ -1112,13 +1170,15 @@
   }
   grip.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    const r = tray.getBoundingClientRect();
-    drag = { id: e.pointerId, dx: e.clientX - r.left, dy: e.clientY - r.top };
+    const p = toScreen(e.clientX, e.clientY);
+    drag = { id: e.pointerId, dx: p.x - tray.offsetLeft, dy: p.y - tray.offsetTop };
     grip.setPointerCapture(e.pointerId);
     grip.classList.add('dragging');
   });
   grip.addEventListener('pointermove', (e) => {
-    if (drag && e.pointerId === drag.id) placeTray(e.clientX - drag.dx, e.clientY - drag.dy);
+    if (!drag || e.pointerId !== drag.id) return;
+    const p = toScreen(e.clientX, e.clientY);
+    placeTray(p.x - drag.dx, p.y - drag.dy);
   });
   const endDrag = (e) => {
     if (!drag || e.pointerId !== drag.id) return;
@@ -1234,12 +1294,24 @@
   // Fenêtre
   // ---------------------------------------------------------------------------
   window.addEventListener('scroll', () => active && schedule(true), { passive: true });
-  window.addEventListener('resize', () => {
-    if (!active) return;
-    resize();
-    if (trayPos) placeTray(trayPos.x, trayPos.y);
-    schedule(true);
-  });
+  window.addEventListener('resize', () => active && relayout());
+  // Zoom à deux doigts ou au pavé tactile, et déplacement dans la page zoomée.
+  if (vvp) {
+    vvp.addEventListener('resize', () => active && relayout());
+    vvp.addEventListener('scroll', () => active && relayout());
+  }
+  // Zoom du navigateur (Ctrl + molette) ou fenêtre passée sur un autre écran.
+  let dprQuery = null;
+  function watchDpr() {
+    if (dprQuery) dprQuery.removeEventListener('change', onDprChange);
+    dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+    dprQuery.addEventListener('change', onDprChange);
+  }
+  function onDprChange() {
+    watchDpr();
+    if (active) relayout();
+  }
+  watchDpr();
   window.addEventListener('pagehide', () => active && flush());
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden' && active) flush();
@@ -1267,7 +1339,7 @@
     }
     syncUI();
     if (trayPos) placeTray(trayPos.x, trayPos.y);
-    else placeTray(16, (vh - tray.getBoundingClientRect().height) / 2);
+    else placeTray(16, (screenH - tray.offsetHeight) / 2);
     schedule(true);
     clearInterval(urlTimer);
     urlTimer = setInterval(checkUrl, 800);

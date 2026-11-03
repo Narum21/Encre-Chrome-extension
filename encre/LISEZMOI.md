@@ -36,6 +36,10 @@ Garde le dossier `encre` à sa place : Chrome le lit à chaque démarrage.
 Autres raccourcis : `Ctrl+Z` annuler, `Ctrl+Y` rétablir, `Échap` masquer.
 En mode Naviguer, le clavier est laissé à la page.
 
+**Zoom** : zoome à deux doigts sur l'écran ou sur le pavé tactile. L'encre est redessinée
+à chaque zoom : elle reste aussi nette que le texte et collée au même endroit de la page.
+La barre garde sa taille et reste à l'écran.
+
 La barre se déplace par sa poignée (les trois rangées de points en haut).
 L'appareil photo enregistre une capture de l'écran annoté dans tes téléchargements.
 
@@ -58,7 +62,7 @@ Si ton bouton lance autre chose (un raccourci, un menu, un double clic) :
   L'icône affiche alors un « ! ».
 - Sur les sites qui défilent à l'intérieur d'un cadre (Gmail, Google Docs, Notion…),
   les traits restent accrochés à la fenêtre et ne suivent pas ce cadre.
-- Si la mise en page change (fenêtre redimensionnée, zoom), les traits ne se recalent pas sur le texte.
+- Si la mise en page change (fenêtre redimensionnée, zoom Ctrl + molette), le texte peut bouger et les traits ne se recalent pas dessus. Le zoom à deux doigts n'a pas ce problème.
 - Un stylet passif (embout en caoutchouc, sans pile ni Bluetooth) est vu comme un doigt : il ne peut pas écrire.
 - Les extensions Chrome ne fonctionnent pas sur iPad ni sur téléphone.
 

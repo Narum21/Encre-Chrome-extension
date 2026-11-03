@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Encre : écrire au stylet sur le web",
   "short_name": "Encre",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Écris, surligne et efface au stylet sur n'importe quelle page. Le bouton du stylet sert de gomme.",
   "permissions": ["activeTab", "scripting", "storage", "unlimitedStorage"],
   "background": {
