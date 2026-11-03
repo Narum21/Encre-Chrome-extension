@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Encre : écrire au stylet sur le web",
+  "short_name": "Encre",
+  "version": "1.1.0",
+  "description": "Écris, surligne et efface au stylet sur n'importe quelle page. Le bouton du stylet sert de gomme.",
+  "permissions": ["activeTab", "scripting", "storage", "unlimitedStorage"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Écrire sur cette page (Alt+Maj+D)",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+D",
+        "mac": "Alt+Shift+D"
+      },
+      "description": "Afficher ou masquer l'encre sur la page"
+    }
+  }
+}
